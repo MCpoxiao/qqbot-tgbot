@@ -1,0 +1,7 @@
+# 真实配置（含 token 与白名单）不进版本库
+config.json
+# DeepSeek 密钥绝不能提交
+.deepseek-key
+logs/
+*.log
+node_modules/
