@@ -33,3 +33,13 @@ HANDOFF.md
 MEMORY.md
 AGENTS.md
 sessions.json
+
+# 配置备份（里面有我的路径与本地设置）
+qq-bot/config.json.bak*
+# 运行态 / 二进制目录
+qq-bot/sessions.json
+qq-bot/napcat/
+qq-bot/小笛记忆-spool/
+# 个人化的东西
+qq-bot/memes.md
+qq-bot/填cookie.cmd
