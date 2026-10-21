@@ -1,0 +1,35 @@
+# ── 只放「小笛」机器人本体；下列一律挡在外面 ──
+node_modules/
+.tmp/
+probe/
+archive/
+memory/
+
+# 机器人运行产物
+qq-bot/logs/
+qq-bot/stickers/
+qq-bot/小笛记忆-spool/
+*.log
+*.dmp
+
+# ⚠️ 密钥 / cookie / 本地配置：绝不入库
+qq-bot/telegram-token.txt
+qq-bot/bili-cookie.txt
+qq-bot/pixiv-cookie.txt
+qq-bot/*cookie*.txt
+qq-bot/.deepseek-key
+qq-bot/config.json
+
+# 系统/编辑器
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 一次性探针脚本（里面有真实群号/QQ号，不入库）
+qq-bot/tools/probe-*.mjs
+
+# 工作区私有笔记（个人记忆与交班件）
+HANDOFF.md
+MEMORY.md
+AGENTS.md
+sessions.json

@@ -1,0 +1,17 @@
+{
+  "name": "qq-bot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "QQ AI 聊天机器人：NapCat / OneBot 11 协议端 + 可切换大模型后端，零运行时依赖",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node bot.mjs",
+    "check": "node bot.mjs --check",
+    "test-llm": "node bot.mjs --test-llm",
+    "mock": "node tools/mock-onebot.mjs",
+    "selftest": "node tools/selftest.mjs"
+  }
+}
