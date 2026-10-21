@@ -290,4 +290,10 @@ node qq-bot/tools/check-undefined.mjs  # 静态检查
 
 ## 许可
 
-个人项目，未标许可证。用到的第三方数据（表情包、B站内容等）版权归各自作者。
+**CC BY-NC 4.0** —— 学习、复制、修改、分发都可以，**但不能商用**。转载/改写请注明来源与作者（[@MCpoxiao](https://github.com/MCpoxiao)）。
+完整正文见 [`LICENSE`](LICENSE)。
+
+> 为什么不用 MIT / Apache：这两个允许商用。为什么不用 PolyForm Noncommercial：它对软件更合适，但本项目只想把「非商用」说清楚，用了更广为人知的 CC BY-NC。
+> 如果你要拿去做商业用途，请先联系作者。
+
+用到的第三方数据（表情包、B站 内容、pixiv 图等）版权归各自作者，不在本项目许可范围内。
