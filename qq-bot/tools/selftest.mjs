@@ -41,7 +41,7 @@ import {
   timeAnchor,
   nowLabelShort,
 } from '../src/tools.mjs';
-import {
+import { stickerDue,
   isHumanTag,
   loadStickers,
   splitReply,
@@ -251,6 +251,12 @@ const testCfg = (overrides = {}) => {
      * 显式打开它、并把 dir 指到临时目录。
      */
     chatArchive: { enabled: false, ...(ca ?? {}) },
+    /**
+     * 表情包频率闸默认**关掉**（2026-10-21 加）：端到端那条「标记→真实图片段」是**第一轮**就发图 ✓，
+     * 而机器人默认是「每 5 轮才发一张」✓ ⇒ 不关掉它，那条断言会莫名其妙变红 ✗。
+     * 想测闸本身的用例自己传 `stickers: { everyNTurns: 5 }` ✓。
+     */
+    stickers: { ...(overrides.stickers ?? {}), everyNTurns: 1 },
     /**
      * ⚠️ **自测永远跑 OneBot 传输层**（2026-10-14 加）。
      *
@@ -1062,6 +1068,13 @@ async function testEndToEnd() {
     '连发合并：两条并成一轮（不是各回一条，也不是丢一条）',
     echoTimes === 1 && mergedText.includes('第一句') && mergedText.includes('第二句'),
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
+  );
+
+  // 2026-10-21：表情包频率闸（每 N 轮一张）—— 纯函数单测
+  check(
+    '表情包：每 5 轮才放行一次（第 5/10 轮发，第 1~4/6 轮不发）',
+    stickerDue(5, 5) === true && stickerDue(10, 5) === true && stickerDue(1, 5) === false &&
+      stickerDue(4, 5) === false && stickerDue(6, 5) === false && stickerDue(1, 1) === true,
   );
 
   // --- 发图：走完整链路（消息进来 → 模型 → 标记解析 → 富消息发出）---

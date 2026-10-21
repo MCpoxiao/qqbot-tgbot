@@ -98,6 +98,32 @@ export function toOneBotEvent(msg, me = {}, opts = {}) {
     const local = opts.downloadFile ? opts.downloadFile(photo.file_id, 'image') : '';
     segments.push({ type: 'image', data: { file: local ? `file://${local}` : '', url: '', file_id: photo.file_id } });
   }
+  /**
+   * **贴纸**（2026-10-21 用户要求「TG 的贴纸能不能读」）。
+   *
+   * TG 的 sticker 有三种：**静态 webp** ✓、动图 `.tgs`（Lottie）✗、视频 `.webm` ✗。
+   * 静态的可以下载 → 转 PNG → 交给识图模型 ✓；动画的**看不到图** ✗，
+   * 只能读出 `emoji` 和 `set_name`（贴纸包名）✓ —— 让她凭 emoji 猜语境 ✓。
+   *
+   * 这里统一成一个 `sticker` 段（带 emoji / 包名 / 是否动画）✓；
+   * 静态的**额外**再塞一个 `image` 段 ✓，这样 `bot.mjs` 原来那套识图逻辑**原样就能用** ✓。
+   */
+  if (msg.sticker) {
+    const st = msg.sticker;
+    const animated = Boolean(st.is_animated || st.is_video);
+    const local = !animated && opts.downloadFile ? String(opts.downloadFile(st.file_id, 'image') ?? '') : '';
+    segments.push({
+      type: 'sticker',
+      data: {
+        file: local ? `file://${local}` : '',
+        file_id: String(st.file_id ?? ''),
+        emoji: String(st.emoji ?? ''),
+        setName: String(st.set_name ?? ''),
+        animated,
+      },
+    });
+    if (local) segments.push({ type: 'image', data: { file: `file://${local}`, url: '', file_id: st.file_id } });
+  }
   if (msg.voice?.file_id) {
     const local = opts.downloadFile ? opts.downloadFile(msg.voice.file_id, 'voice') : '';
     segments.push({ type: 'record', data: { file: local ? `file://${local}` : '', file_id: msg.voice.file_id } });
