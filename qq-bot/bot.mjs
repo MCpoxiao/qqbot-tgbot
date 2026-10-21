@@ -66,6 +66,7 @@ import {
   isHumanTag,
   loadStickers,
   splitReply,
+  stickerDue,
   stripImageMarkers,
   toBase64UrlOrNull,
 } from './src/stickers.mjs';
@@ -1102,7 +1103,8 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
       `看懂规则再动手；攻略太长就只看前几条要点。（这一步很省，别跳过 ✓）\n` +
       `· 真要去玩：**先问主人一句**（"我想玩会儿 X，行吗"）✓ —— 他说"去/行/玩吧"才调 phone_play ✓。\n` +
       `· phone_play 会自己打开雷电模拟器 ✓；一次最多约 20 步 / 大约 1 块钱 ✓；玩完用你自己的话跟他说你干了啥 ✓。\n` +
-      `· **你是有偏好的** ✓：玩到喜欢的游戏/关卡，用 memory_remember 记一句（"我喜欢玩 XX，因为…"）✓；` +
+      `· **你是有偏好的** ✓：玩到喜欢的游戏/关卡就**直接说出来**（"我挺喜欢玩 XX，因为…"）✓ ——` +
+      `这话会被收尾的记忆整理记进长期记忆 ✓（**没有** memory_remember 这个工具 ✗，别去调它）；` +
       `下次想玩时**优先挑你喜欢的** ✓，别每次随机。\n` +
       // 2026-10-19 用户问「他有没有自己练号练强度的思维」✓ ⇒ 给她一个**可执行的养成循环** ✓
       `· **练号/养成（重要 ✓）**：每次开玩之前，先看自己记忆里这个游戏的**进度**（推到第几关、缺什么素材）；` +
@@ -1111,7 +1113,8 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
       `不然每次从零开始 ✓。\n` +
       // 2026-10-19 用户问「她搜攻略会搜配队/练角色吗」✓ ⇒ 会搜 ✓，但要**存成笔记**才不白搜 ✓
       `· **攻略笔记（别白搜 ✓）**：搜到的攻略只记**要点**（谁和谁搭、先练哪个、刷哪关），` +
-      `用 memory_remember 存成「XX 攻略要点：…」✓；下次先看笔记 ✓，**别每次重搜** ✗（重搜一次就是好几千 token ✓）。\n` +
+      `**用一句话说出来**（"XX 的攻略我记着了：谁配谁、先练谁"）✓ —— 会被记进长期记忆 ✓；` +
+      `下次先看记忆里的笔记 ✓，**别每次重搜** ✗（重搜一次就是好几千 token ✓）。\n` +
       `· 你能查到**配队/练谁/刷哪关**这类结论 ✓，但**不会自己发明战术** ✗ —— 拿不准就搜 ✓，别硬编 ✓。\n` +
       `· **这是你自己的号** ✓（主人单开的 ✓）：进度、资源、抽卡券都当自己的打理 ✓；` +
       `但**花钱**（充值/买礼包）仍然**必须问主人** ✓，这是唯一不能自己决定的事 ✓。\n` +
@@ -1146,6 +1149,12 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
     );
   }
   let systemPrompt = composeSystem();
+
+  /**
+   * 每个会话"说到第几轮"（2026-10-21 加）：用来实现「每 5 轮才发一张表情包」✓。
+   * 只存内存 ✓（重启归零 ✓，正好相当于重新计数 ✓）。
+   */
+  const stickerTurns = new Map();
 
   /**
    * 表情包目录是**用户随时会动**的（替换整套、删几张、加几张）。
@@ -1788,6 +1797,20 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
         const segs = Array.isArray(evt?.message) ? evt.message : [];
         const videoSeg = segs.find((s) => s?.type === 'video');
         const hasVoice = segs.some((s) => s?.type === 'record');
+        // 2026-10-21：TG 贴纸（静态的上一段已经转成 image 段了 ✓，这里只补"这是贴纸"的语境 ✓）
+        const stickerSeg = segs.find((s) => s?.type === 'sticker');
+        if (stickerSeg) {
+          const st = stickerSeg.data ?? {};
+          const emo = String(st.emoji ?? '').trim();
+          const set = String(st.setName ?? '').trim();
+          textForModel +=
+            `\n【贴纸】他发的是**一张贴纸**（不是普通照片 ✓）：` +
+            (emo ? `emoji=${emo} ` : '') +
+            (set ? `来自贴纸包「${set}」` : '') +
+            (st.animated
+              ? `\n（这是**动画贴纸，我看到的只是静态预览或什么都看不到** ✗ —— 只能凭 emoji 和上下文猜情绪，**别编细节** ✓。）`
+              : `\n（静态贴纸，图我看到了 ✓ —— 可以按图里的表情/文字回应 ✓，但**别说它是"照片"** ✗。）`);
+        }
         if (videoSeg) {
           const seen = await describeVideo(state, videoSeg.data ?? videoSeg, { log, question: text });
           if (seen) {
@@ -2618,8 +2641,27 @@ log.warn(`[找图] 这一段抛错了：${err?.stack ?? err?.message ?? err}`);
         // 剩下的三道是卫生问题：数量上限、必须是本次搜出来的、目标主机不能是内网。
         const allowWebImage = createWebImageGate({ max: state.chat?.maxWebImages ?? 4 });
 
+        /**
+         * **每 N 轮才放行一张表情包**（2026-10-21 用户要求「每 5 轮对话可以发」✓）。
+         *
+         * 为什么在代码层拦：只靠提示词写「别太频繁」没用 ✗ —— 模型会连着两三轮都配图 ✓，
+         * 用户看到的就是"她一直在发表情包"✗。这里按会话计数 ✓：第 5、10、15… 轮放行 ✓，
+         * 其余轮次**直接把她写的 `[[图:…]]` 标记剥掉** ✓（话照说 ✓，只是不配图 ✓）。
+         */
+        const everyN = Math.max(1, Number(state.stickers?.everyNTurns ?? 5));
+        const turnNo = (stickerTurns.get(key) ?? 0) + 1;
+        stickerTurns.set(key, turnNo);
+        let replyForSplit = reply;
+        if (!stickerDue(turnNo, everyN)) {
+          const stripped = stripImageMarkers(reply);
+          if (stripped !== reply) {
+            replyForSplit = stripped;
+            log.info(`[表情包] 本轮第 ${turnNo} 轮（每 ${everyN} 轮才发一张）⇒ 这次不配图 ✓`);
+          }
+        }
+
         // 把 [[图:标签]] / [[网图:URL]] 换成真实图片段；不认的标记直接丢掉，不打断这句话
-        const { segments, unknownTags, rejectedWeb, toolMarkers } = splitReply(reply, stickers, { allowWebImage });
+        const { segments, unknownTags, rejectedWeb, toolMarkers } = splitReply(replyForSplit, stickers, { allowWebImage });
         if (unknownTags.length) log.warn(`模型点了库里没有的表情：${unknownTags.join('、')}`);
         // 模型把"工具调用"写成了正文里的标记（`[[qq_profile_set:…]]`）—— 已吃掉，但要留痕：
         // 说明它想调工具却没走 function calling（2026-10-09 实测：那条标记**真的发到用户眼前了**）。

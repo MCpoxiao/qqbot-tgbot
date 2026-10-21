@@ -313,3 +313,13 @@ export function toBase64UrlOrNull(absPath) {
     return null;
   }
 }
+
+/**
+ * **这一轮该不该配表情包**（2026-10-21 加）。
+ * 规则：每 everyN 轮才放行一次（第 N、2N、3N… 轮 ✓）。
+ * 抽成纯函数是为了能单独测 ✓ —— 之前的边界条件只能靠端到端碰运气 ✗。
+ */
+export function stickerDue(turnNo, everyN = 5) {
+  const n = Math.max(1, Number(everyN) || 5);
+  return Math.max(1, Number(turnNo) || 1) % n === 0;
+}
