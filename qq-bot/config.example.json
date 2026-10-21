@@ -1,0 +1,47 @@
+{
+  "onebot": {
+    "url": "ws://127.0.0.1:3001",
+    "token": "",
+    "reconnectMs": 3000,
+    "maxReconnectMs": 60000
+  },
+
+  "trigger": {
+    "private": "all",
+    "group": "mention",
+    "keywords": ["机器人"]
+  },
+
+  "whitelist": {
+    "users": [],
+    "groups": []
+  },
+
+  "limits": {
+    "cooldownMs": 2500,
+    "maxReplyChars": 900,
+    "maxInputChars": 2000,
+    "historyTurns": 6,
+    "sessionTtlMs": 1800000
+  },
+
+  "llm": {
+    "provider": "deepseek",
+    "system": "你是一个友好的 QQ 聊天助手。回答简短、口语化，通常不超过三句话。不要使用 Markdown 语法。",
+    "timeoutMs": 60000,
+    "deepseek": {
+      "baseUrl": "https://api.deepseek.com",
+      "model": "deepseek-chat",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "apiKeyFile": ".deepseek-key",
+      "temperature": 1.0,
+      "maxTokens": 800
+    },
+    "ollama": {
+      "baseUrl": "http://127.0.0.1:11434",
+      "model": "qwen3:8b",
+      "temperature": 0.7,
+      "numPredict": 800
+    }
+  }
+}
