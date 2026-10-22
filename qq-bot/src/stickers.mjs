@@ -333,5 +333,6 @@ export function stickerCooled(turnNo, lastSentTurn = 0, everyN = 5) {
   const n = Math.max(1, Number(everyN) || 5);
   const now = Math.max(1, Number(turnNo) || 1);
   const last = Math.max(0, Number(lastSentTurn) || 0);
+  if (last === 0) return true; // 从没发过 ⇒ 不受冷却限制 ✓（这一条我第一版写错了 ✗）
   return now - last >= n;
 }
