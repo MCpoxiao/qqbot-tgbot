@@ -66,7 +66,7 @@ import {
   isHumanTag,
   loadStickers,
   splitReply,
-  stickerDue,
+  stickerCooled,
   stripImageMarkers,
   toBase64UrlOrNull,
 } from './src/stickers.mjs';
@@ -2642,26 +2642,33 @@ log.warn(`[找图] 这一段抛错了：${err?.stack ?? err?.message ?? err}`);
         const allowWebImage = createWebImageGate({ max: state.chat?.maxWebImages ?? 4 });
 
         /**
-         * **每 N 轮才放行一张表情包**（2026-10-21 用户要求「每 5 轮对话可以发」✓）。
+         * **表情包冷却**（2026-10-21 加，2026-10-22 按用户更正改成"冷却"✓）。
          *
-         * 为什么在代码层拦：只靠提示词写「别太频繁」没用 ✗ —— 模型会连着两三轮都配图 ✓，
-         * 用户看到的就是"她一直在发表情包"✗。这里按会话计数 ✓：第 5、10、15… 轮放行 ✓，
-         * 其余轮次**直接把她写的 `[[图:…]]` 标记剥掉** ✓（话照说 ✓，只是不配图 ✓）。
+         * 规则：**上一次真的发了图之后，至少隔 N 轮**才允许再发 ✓（不是"每第 N 轮必发"✗）。
+         * 只靠提示词写「别太频繁」没用 ✗；这里按会话记 `{ turn, sent }` ✓：
+         *   · `turn` = 这个会话聊到第几轮 ✓；
+         *   · `sent` = **上一次带图发出去**是第几轮 ✓（没发过 = 0 ✓）；
+         * 不满足冷却 ⇒ **把她写的 `[[图:…]]` 剥掉** ✓（话照说 ✓，只是不配图 ✓）。
          */
         const everyN = Math.max(1, Number(state.stickers?.everyNTurns ?? 5));
-        const turnNo = (stickerTurns.get(key) ?? 0) + 1;
-        stickerTurns.set(key, turnNo);
+        const stPrev = stickerTurns.get(key) ?? { turn: 0, sent: 0 };
+        const turnNo = stPrev.turn + 1;
+        stickerTurns.set(key, { turn: turnNo, sent: stPrev.sent }); // 先记轮数；sent 等真的发了再更新 ✓
         let replyForSplit = reply;
-        if (!stickerDue(turnNo, everyN)) {
+        if (!stickerCooled(turnNo, stPrev.sent, everyN)) {
           const stripped = stripImageMarkers(reply);
           if (stripped !== reply) {
             replyForSplit = stripped;
-            log.info(`[表情包] 本轮第 ${turnNo} 轮（每 ${everyN} 轮才发一张）⇒ 这次不配图 ✓`);
+            log.info(`[表情包] 第 ${turnNo} 轮；上次发图在第 ${stPrev.sent} 轮（冷却 ${everyN} 轮）⇒ 这次不配图 ✓`);
           }
         }
 
         // 把 [[图:标签]] / [[网图:URL]] 换成真实图片段；不认的标记直接丢掉，不打断这句话
         const { segments, unknownTags, rejectedWeb, toolMarkers } = splitReply(replyForSplit, stickers, { allowWebImage });
+        // 真的带图发出去了 ⇒ 更新"上次发图轮数" ✓（冷却从这一刻起算 ✓；只放行没发不算 ✓）
+        if (segments.some((s) => s?.type === 'image')) {
+          stickerTurns.set(key, { turn: turnNo, sent: turnNo });
+        }
         if (unknownTags.length) log.warn(`模型点了库里没有的表情：${unknownTags.join('、')}`);
         // 模型把"工具调用"写成了正文里的标记（`[[qq_profile_set:…]]`）—— 已吃掉，但要留痕：
         // 说明它想调工具却没走 function calling（2026-10-09 实测：那条标记**真的发到用户眼前了**）。

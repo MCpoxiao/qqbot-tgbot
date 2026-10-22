@@ -315,11 +315,23 @@ export function toBase64UrlOrNull(absPath) {
 }
 
 /**
- * **这一轮该不该配表情包**（2026-10-21 加）。
- * 规则：每 everyN 轮才放行一次（第 N、2N、3N… 轮 ✓）。
- * 抽成纯函数是为了能单独测 ✓ —— 之前的边界条件只能靠端到端碰运气 ✗。
+ * **这一轮该不该配表情包**（2026-10-21 加，2026-10-22 改成「冷却」✓）。
+ *
+ * ⚠️ 原来写的是 `turnNo % everyN === 0` ✗ —— 那是「**每第 N 轮必定发一张**」✗，
+ *    用户要的是「**发过一张之后冷却 N 轮**」✓。差别：
+ *    · 第 5 轮她没发 ⇒ 第 10 轮**不该补发** ✗；
+ *    · 第 6 轮（上次发送已经够久）⇒ 应该允许 ✓。
+ *
+ * 判据：`turnNo - lastSentTurn >= everyN` ✓ —— 只有**真的带图发出去了**才更新 `lastSentTurn` ✓。
+ * `lastSentTurn = 0`（从没发过）时，第 1 轮就可以发 ✓。
+ *
+ * @param {number} turnNo       这是第几轮（同一会话自增）
+ * @param {number} lastSentTurn 上一次**真的发了图**是第几轮（没发过 = 0）
+ * @param {number} everyN       冷却几轮，默认 5
  */
-export function stickerDue(turnNo, everyN = 5) {
+export function stickerCooled(turnNo, lastSentTurn = 0, everyN = 5) {
   const n = Math.max(1, Number(everyN) || 5);
-  return Math.max(1, Number(turnNo) || 1) % n === 0;
+  const now = Math.max(1, Number(turnNo) || 1);
+  const last = Math.max(0, Number(lastSentTurn) || 0);
+  return now - last >= n;
 }
