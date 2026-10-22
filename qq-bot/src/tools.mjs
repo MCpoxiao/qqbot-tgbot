@@ -1372,6 +1372,23 @@ export async function execTool(name, args = {}, ctx = null) {
 
 export const TOOL_NAMES = Object.keys(IMPL);
 
+/**
+ * **对外暴露一个执行入口**（2026-10-22 加）。
+ *
+ * 为什么：`IMPL` 一直是模块私有的 ✗ —— 想**单独验**一个工具（比如新加的
+ * `collect_stickers` 到底能不能存图 ✓）只能靠整套自测或机器人真机试 ✗，代价太大 ✓。
+ * 这里包一层，方便脚本/自测直接调 ✓；**行为与内部 `runTool` 一致**（永远返回字符串、不抛 ✓）。
+ */
+export async function runTool(name, args = {}, ctx = null) {
+  const fn = IMPL[String(name)];
+  if (typeof fn !== 'function') return '没有叫 ' + String(name) + ' 的工具';
+  try {
+    return String(await fn(args ?? {}, ctx));
+  } catch (err) {
+    return '工具 ' + String(name) + ' 执行失败：' + String(err?.message ?? err).slice(0, 200);
+  }
+}
+
 /* ================== 手机（ADB 驱动雷电模拟器，2026-10-19 加） ==================
  * 用户：「我想象中就是自己玩游戏可能会叫我一起，她刷 b 站可以控制手机 @ 我」
  * 走 ADB 而不是模拟鼠标：雷电自带 adb.exe，input tap/swipe/text 是确定性的 ✓；
