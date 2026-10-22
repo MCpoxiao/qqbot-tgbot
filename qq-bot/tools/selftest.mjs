@@ -41,7 +41,7 @@ import {
   timeAnchor,
   nowLabelShort,
 } from '../src/tools.mjs';
-import { stickerDue,
+import { stickerCooled,
   isHumanTag,
   loadStickers,
   splitReply,
@@ -1070,12 +1070,17 @@ async function testEndToEnd() {
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
   );
 
-  // 2026-10-21：表情包频率闸（每 N 轮一张）—— 纯函数单测
+  // 2026-10-22：表情包**冷却**（不是「每第 N 轮必发」✗ —— 用户 10-21 晚纠正过 ✓）
   check(
-    '表情包：每 5 轮才放行一次（第 5/10 轮发，第 1~4/6 轮不发）',
-    stickerDue(5, 5) === true && stickerDue(10, 5) === true && stickerDue(1, 5) === false &&
-      stickerDue(4, 5) === false && stickerDue(6, 5) === false && stickerDue(1, 1) === true,
+    '表情包冷却：上次发图之后隔 N 轮才放行（没发过就不受限制）',
+    stickerCooled(1, 0, 5) === true &&
+      stickerCooled(5, 0, 5) === true &&
+      stickerCooled(6, 5, 5) === false &&
+      stickerCooled(9, 5, 5) === false &&
+      stickerCooled(10, 5, 5) === true &&
+      stickerCooled(6, 1, 5) === true,
   );
+
 
   // --- 发图：走完整链路（消息进来 → 模型 → 标记解析 → 富消息发出）---
   await sleep(400); // 让上一个会话的冷却过去，否则这条会被规则层挡掉
