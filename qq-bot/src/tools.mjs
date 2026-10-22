@@ -296,7 +296,21 @@ export function parseBingMedia(html, max = 4) {
     if (out.length >= max) break;
     let j;
     try {
-      j = JSON.parse(m[1].replace(/&quot;/g, '"'));
+      /**
+       * ⚠️ **2026-10-22 修真 bug**：只解 `&quot;` 是不够的 ✗ ——
+       * Bing 的 `m="…"` 属性里还夹着 `&amp;` / `&#39;` / `&#x2F;` ✓，
+       * 这些留在 JSON 里会让 `JSON.parse` 抛错 ✓ ⇒ 结果被 `continue` 掉 ✓ ⇒
+       * **一条候选都解析不出来** ✗（实测：属性 25 个、结果 0 个 ✓）。
+       * 这个 bug 同时让「搜集表情包」和**现成的搜图**都拿不到直链 ✓。
+       */
+      const raw = m[1]
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .replace(/&#39;|&apos;/g, "'")
+        .replace(/&#x2[fF];|&#47;/g, '/')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
+      j = JSON.parse(raw);
     } catch {
       continue;
     }
@@ -1508,6 +1522,32 @@ const SAVE_STICKER_DEF = {
 };
 TOOL_DEFS.push(SAVE_STICKER_DEF);
 
+/**
+ * **上网搜集表情包入库**（2026-10-22 用户要求：「能不能上网去搜集表情包」）。
+ * 走 **cn.bing.com** 图片搜索 → 下载 → 魔法字节校验 → 去重 → 存成「搜索词-1/2/3」✓
+ * （`loadStickers` 会把结尾的 `-数字` 剥掉 ⇒ 自动归到「搜索词」这个标签下 ✓）。
+ * ⚠️ 版权：只存单张梗图，别整套搬别人的付费包（描述里也写了）。
+ */
+const COLLECT_STICKERS_DEF = {
+  type: 'function',
+  function: {
+    name: 'collect_stickers',
+    description:
+      '上网搜表情包并**存进你自己的库**（以后你能发它们）。他说「去搜点 XX 表情包存着 / 多囤点 XX 的图」时用。' +
+      '一次最多 4 张；自动去重、自动起标签（= 搜索词）、描述由保存后统一生成。' +
+      '⚠️ 只存单张梗图，不要整套搬别人的付费表情包。',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: '搜什么（用画面词，比如「猫猫 无语 表情包」）' },
+        count: { type: 'integer', description: '存几张，1~4，默认 3', minimum: 1, maximum: 4 },
+      },
+      required: ['query'],
+    },
+  },
+};
+TOOL_DEFS.push(COLLECT_STICKERS_DEF);
+
 TOOL_DEFS.push(...PHONE_DEFS);
 
 const PLAY_STATE = { lastAt: 0, day: '', count: 0 }; // 「自己玩手机」的当天计数 ✓
@@ -1609,6 +1649,79 @@ Object.assign(IMPL, {
   phone_type: (a) => phoneCall('type', a),
   phone_apps: () => phoneCall('apps'),
   phone_open: (a) => phoneCall('open', a),
+  /**
+   * 上网搜集表情包入库（走 **cn.bing.com** —— `www.bing.com` 会返回空 ✗）。
+   * 存成「搜索词-1/2/3」✓，`loadStickers` 会自动把结尾的数字剥掉 ⇒ 归到同一个标签 ✓。
+   */
+  collect_stickers: async (args, ctx) => {
+    try {
+      const q = String(args?.query ?? '').trim().slice(0, 40);
+      if (!q) return '要搜什么表情包？给个画面词（比如「猫猫 无语」）。';
+      const want = Math.min(4, Math.max(1, Number(args?.count) || 3));
+      const { loadStickers } = await import('./stickers.mjs');
+      const fs = await import('node:fs');
+      const { createHash } = await import('node:crypto');
+      const { join } = await import('node:path');
+      const st = loadStickers(String(ctx?.stickersDir ?? 'stickers'));
+
+      const seen = new Set();
+      for (const f of fs.readdirSync(st.dir)) {
+        if (!/\.(png|jpe?g|gif|webp)$/i.test(f)) continue;
+        try { seen.add(createHash('sha256').update(fs.readFileSync(join(st.dir, f))).digest('hex')); } catch { /* 忽略 */ }
+      }
+
+      const qs = new URLSearchParams({ q, adlt: 'strict', setlang: 'zh-CN' });
+      const res = await fetch('https://cn.bing.com/images/search?' + qs.toString(), {
+        headers: {
+          'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36',
+          'accept-language': 'zh-CN,zh;q=0.9',
+        },
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!res.ok) return '搜图请求失败：HTTP ' + res.status + '（等一下再试）。';
+      const urls = (parseBingMedia(await res.text(), 14) ?? [])
+        .map((m) => (typeof m === 'string' ? m : String(m?.url ?? ''))) // parseBingMedia 返回的是对象 ✓
+        .map((u) => normalizeImageUrl(u))
+        /**
+         * ⚠️ **2026-10-22 实测**：Bing 有些 `murl` **不带协议头** ✗
+         * （比如 `c-ssl.duitang.com/uploads/…jpeg` ✓）⇒ `fetch` 直接 `Invalid URL` ⇒ 一张都存不下 ✗。
+         * 这里统一补 `https://` ✓（实测这一批全是 https 站点 ✓）。
+         */
+        .map((u) => (u && !/^https?:/i.test(u) ? 'https://' + u.replace(/^\/+/, '') : u))
+        .filter(Boolean);
+      if (!urls.length) return '这次一张都没搜到（换个说法再试）。';
+
+      let saved = 0;
+      const notes = [];
+      for (const u of urls) {
+        if (saved >= want) break;
+        let buf = null;
+        try {
+          const r = await fetch(u, { headers: { 'user-agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20000) });
+          if (!r.ok) continue;
+          buf = Buffer.from(await r.arrayBuffer());
+        } catch { continue; }
+        if (!buf || buf.length < 3000 || buf.length > 3 * 1024 * 1024) continue;
+        const isPng = buf[0] === 0x89 && buf[1] === 0x50;
+        const isJpg = buf[0] === 0xff && buf[1] === 0xd8;
+        const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46;
+        const isWebp = buf.slice(8, 12).toString() === 'WEBP';
+        if (!isPng && !isJpg && !isGif && !isWebp) continue;
+        const sha = createHash('sha256').update(buf).digest('hex');
+        if (seen.has(sha)) continue;
+        seen.add(sha);
+        const ext = isPng ? '.png' : isGif ? '.gif' : isWebp ? '.webp' : '.jpg';
+        saved += 1;
+        const dest = join(st.dir, q + '-' + saved + ext);
+        fs.writeFileSync(dest, buf);
+        notes.push(dest);
+      }
+      if (!saved) return '搜到了但都没存成（重复或下不下来）—— 换个说法再试。';
+      return '存好了 ' + saved + ' 张，标签是「' + q + '」—— 以后我能发它们了。（描述会在下次批量跑时补上）';
+    } catch (e) {
+      return '搜集表情包出错：' + String(e?.message ?? e).slice(0, 120);
+    }
+  },
   /**
    * 保存他刚发的贴纸（"收到就下载"的那份文件 ⇒ 不会碰上 file_id 过期 ✗）。
    * 存好之后顺手让视觉模型给一句描述 ✓ 写进 .descriptions.json ✓ —— 这样她以后**能按画面**发它 ✓。
