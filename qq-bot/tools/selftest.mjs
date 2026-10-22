@@ -1070,6 +1070,26 @@ async function testEndToEnd() {
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
   );
 
+  // 2026-10-22：保存他刚发的贴纸（用临时目录，别污染真库 ✓）
+  check(
+    '贴纸：save_sticker 把"他刚发的"存进库（标签去重 + 不污染真库）',
+    await (async () => {
+      const tmpSt = mkdtempSync(tmpdir() + '/stick-');
+      const src = tmpSt + '/incoming.png';
+      writeFileSync(src, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
+      const ctx = { lastStickerFile: src, stickersDir: tmpSt, skipStickerDescribe: true };
+      const r1 = await execTool('save_sticker', { tag: '捂脸笑' }, ctx);
+      const r2 = await execTool('save_sticker', { tag: '捂脸笑' }, ctx); // 同名 → -2 ✓
+      const got = readdirSync(tmpSt).filter((f) => f.startsWith('捂脸笑'));
+      const okMsg = String(r1).includes('存好了') && String(r2).includes('存好了');
+      const okFiles = got.length === 2;
+      const badSrc = await execTool('save_sticker', { tag: 'x' }, { lastStickerFile: tmpSt + '/nope.png', stickersDir: tmpSt });
+      const okMissing = String(badSrc).includes('再发一次') || String(badSrc).includes('不在');
+      rmSync(tmpSt, { recursive: true, force: true });
+      return okMsg && okFiles && okMissing;
+    })(),
+  );
+
   // 2026-10-22：表情包**冷却**（不是「每第 N 轮必发」✗ —— 用户 10-21 晚纠正过 ✓）
   check(
     '表情包冷却：上次发图之后隔 N 轮才放行（没发过就不受限制）',
@@ -5828,14 +5848,14 @@ async function testEntrypoints() {
   // 只会安静地少一个能力（踩过两次：sendImage、reminders）。
   check(
     '路由与工具循环共用同一份 ctx base（漏字段会静默少能力）',
-    /const ctxBase = \{[\s\S]{0,600}?sendImage/.test(botSrc) &&
-      /const ctxBase = \{[\s\S]{0,600}?reminders,/.test(botSrc) &&
+    /const ctxBase = \{[\s\S]{0,1500}?sendImage/.test(botSrc) &&
+      /const ctxBase = \{[\s\S]{0,1500}?reminders,/.test(botSrc) &&
       /const toolCtx = ctxBase;/.test(botSrc),
     'ctxBase / toolCtx 的写法变了，检查是否又各写一份',
   );
   check(
     '路由 ctx 带 sendImage（否则截图截到了也发不出去）',
-    /const ctxBase = \{[\s\S]{0,600}?sendImage/.test(botSrc),
+    /const ctxBase = \{[\s\S]{0,1500}?sendImage/.test(botSrc),
     'ctxBase 里找不到 sendImage',
   );
 
