@@ -65,6 +65,7 @@ import {
   TAGS_VISION_FILE,
   isHumanTag,
   loadStickers,
+  readDescriptions,
   splitReply,
   stickerCooled,
   stripImageMarkers,
@@ -1090,6 +1091,18 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
     if (offerable.length === 0) return state.llm.system + toolHint + memeHint;
 
     const shown = offerable.slice(0, MAX_TAGS_IN_PROMPT);
+
+    /**
+
+     * 每个标签的**画面描述**（`tools/describe-stickers.mjs` 生成 ✓）。
+
+     * 有描述就写成「标签（画面）」✓ —— 她挑图靠**画面**，不再只靠标签名 ✗。
+
+     */
+
+    const notes = readDescriptions(stickers.dir);
+
+    const tagLines = shown.map((t) => (notes[t] ? t + '（' + String(notes[t]).slice(0, 28) + '）' : t)).join('、');
     const more =
       offerable.length > shown.length ? `（一共 ${offerable.length} 个，这里列了前 ${shown.length} 个）` : '';
     return (
@@ -1145,8 +1158,7 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
       //    （搜到一张化妆服务广告 ✓）。**明文堵死这条歧路** ✓。
       `　· **他直接说「发个表情包 / 发表情 / 来张表情」时，就是用 [[图:标签]] 发一张** —— 不需要说话，也**绝对不要**去搜网图或发链接。\n` +
       `　· 例：他说「饿了」→「冰箱里有剩饭喵，自己热」＋ [[图:${shown[0]}]]（换成你觉得贴的那个）。\n` +
-      `可用标签：${shown.join('、')}${more}。`
-    );
+      `可用标签（**括号里是这张图实际长什么样** ✓ —— 按画面挑 ✓，别只看标签名 ✗）：${tagLines}${more}。`    );
   }
   let systemPrompt = composeSystem();
 
@@ -1776,6 +1788,8 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
       // 走 llm.mjs 里已有的 askWithImage（DeepSeek 认 image_url 的 data: URL），
       // 所以**不需要装任何本地视觉模型**。
       let textForModel = text;
+      // 这条消息里的贴纸本地文件（save_sticker 用 ✓；要先在外层声明，不然 ctxBase 那层看不到 ✗）
+      let lastStickerFile = '';
       if (images.length) {
         // ⚠️ 把**用户那句话**也交给视觉模型（2026-10-11 用户问「识图有时候感觉不准」）：
         //    原来 prompt 是通用的"描述这张图"，模型不知道他到底想知道什么
@@ -1799,6 +1813,7 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
         const hasVoice = segs.some((s) => s?.type === 'record');
         // 2026-10-21：TG 贴纸（静态的上一段已经转成 image 段了 ✓，这里只补"这是贴纸"的语境 ✓）
         const stickerSeg = segs.find((s) => s?.type === 'sticker');
+        if (stickerSeg?.data?.file) lastStickerFile = String(stickerSeg.data.file).replace(/^file:\/\//, '');
         if (stickerSeg) {
           const st = stickerSeg.data ?? {};
           const emo = String(st.emoji ?? '').trim();
@@ -1905,6 +1920,8 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
         // 让 recall_chat 能把命中的图/视频**发回来**（`send:true` 那条路要用它）
         target: { type: target.type, id: target.id },
         refs: refsFor(key),
+        // save_sticker 要用：他刚发的那张贴纸的本地文件（静态才有 ✓）
+        lastStickerFile,
         // ⚠️ `onebot` 是「账号自理」那套工具（qqact.mjs）唯一需要的依赖：
         //    它要真的去调 send_qzone_msg / set_qq_profile 这些接口。
         onebot,

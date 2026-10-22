@@ -1484,6 +1484,30 @@ const PHONE_DEFS = [
     },
   },
 ];
+/**
+ * **保存他发的贴纸**（2026-10-22 用户要求：「看到他喜欢的他能不能保存和发送」✓）。
+ * ⚠️ TG 的 `file_id` **会过期** ✗ ⇒ 必须**收到就下载**（telegram.mjs 已经这么做了 ✓），
+ *    所以这里用的是"这条消息刚落盘的那个文件" ✓，而不是以后再去取。
+ */
+const SAVE_STICKER_DEF = {
+  type: 'function',
+  function: {
+    name: 'save_sticker',
+    description:
+      '把**他刚发的那张贴纸**存进你自己的表情包库 ✓（以后你也能发它 ✓）。' +
+      '他说「这个存下来 / 这张不错 / 记住这张」时用 ✓；**动画贴纸存不了** ✗（会告诉你原因 ✓）。' +
+      '标签要短（2~6 个字，描述画面内容 ✓，比如「捂脸笑」「翻白眼」），别用"贴纸1"这种 ✗。',
+    parameters: {
+      type: 'object',
+      properties: {
+        tag: { type: 'string', description: '存成什么标签（2~6 字，描述画面）' },
+      },
+      required: ['tag'],
+    },
+  },
+};
+TOOL_DEFS.push(SAVE_STICKER_DEF);
+
 TOOL_DEFS.push(...PHONE_DEFS);
 
 const PLAY_STATE = { lastAt: 0, day: '', count: 0 }; // 「自己玩手机」的当天计数 ✓
@@ -1585,6 +1609,59 @@ Object.assign(IMPL, {
   phone_type: (a) => phoneCall('type', a),
   phone_apps: () => phoneCall('apps'),
   phone_open: (a) => phoneCall('open', a),
+  /**
+   * 保存他刚发的贴纸（"收到就下载"的那份文件 ⇒ 不会碰上 file_id 过期 ✗）。
+   * 存好之后顺手让视觉模型给一句描述 ✓ 写进 .descriptions.json ✓ —— 这样她以后**能按画面**发它 ✓。
+   */
+  save_sticker: async (args, ctx) => {
+    try {
+      const src = String(ctx?.lastStickerFile ?? '').trim();
+      if (!src) return '没找到他刚发的贴纸文件 ✓（如果这是**动画贴纸**，本来就存不了 ✗ —— 如实告诉他）。';
+      const { loadStickers, readDescriptions } = await import('./stickers.mjs');
+      const { copyFileSync, existsSync, writeFileSync, readFileSync } = await import('node:fs');
+      const { join, extname } = await import('node:path');
+      const st = loadStickers(String(ctx?.stickersDir ?? 'stickers')); // 测试可注入临时目录 ✓
+      if (!existsSync(src)) return '贴纸文件已经不在了 ✗（临时文件被清了）—— 让他再发一次 ✓。';
+      const rawTag = String(args?.tag ?? '').trim().replace(/[\\/:*?"<>|\s]+/g, '').slice(0, 12);
+      if (!rawTag) return '标签不能为空 ✓（给个 2~6 字的画面描述）。';
+      const ext = extname(src) || '.png';
+      let dest = join(st.dir, rawTag + ext);
+      let n = 2;
+      while (existsSync(dest)) { dest = join(st.dir, rawTag + '-' + n + ext); n += 1; }
+      copyFileSync(src, dest);
+      const saved = dest.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? rawTag;
+
+      // 顺手补一句描述（失败不影响"已保存" ✓；测试里可跳过 ✓）
+      let note = '';
+      if (ctx?.skipStickerDescribe === true) {
+        return '存好了 ✓ 标签是「' + saved + '」—— 以后我能发它了 ✓。';
+      }
+      try {
+        const { askWithImage } = await import('./llm.mjs');
+        const { loadConfig } = await import('./config.mjs');
+        const cfg = loadConfig({}).config;
+        const buf = readFileSync(dest);
+        const r = await askWithImage(cfg, {
+          system: '你在给表情包打一句话标签。只描述画面，简短。',
+          prompt: '这是一张聊天用的表情包。用一句中文说清：画面里是什么、什么表情/动作、图上的文字。30 字以内。',
+          imageBase64: buf.toString('base64'),
+          mime: ext.toLowerCase() === '.png' ? 'image/png' : 'image/jpeg',
+          maxTokens: 80,
+        });
+        note = String(r?.text ?? '').trim().slice(0, 40);
+        if (note) {
+          const file = join(st.dir, '.descriptions.json');
+          const map = readDescriptions(st.dir);
+          map[saved] = note;
+          writeFileSync(file, JSON.stringify(map, null, 2) + '\n', 'utf8');
+        }
+      } catch { /* 描述失败就算了 ✓ */ }
+
+      return '存好了 ✓ 标签是「' + saved + '」' + (note ? '（画面：' + note + '）' : '') + ' —— 以后我能发它了 ✓。';
+    } catch (e) {
+      return '存贴纸出错：' + String(e?.message ?? e).slice(0, 120);
+    }
+  },
   phone_install: (a) => phoneCall('install', a),
   phone_play: async (a = {}) => {
     try {

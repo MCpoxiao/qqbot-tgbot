@@ -75,6 +75,17 @@ export function readTagMap(dir) {
   return { ...readJsonMap(join(dir, TAGS_VISION_FILE)), ...readManualTagMap(dir) };
 }
 
+/**
+ * **读"这张图长什么样"的描述表**（2026-10-22 加）。
+ *
+ * 由 `tools/describe-stickers.mjs` 生成 ✓（每个标签一句 ✓，如"蓝紫耳白猫瞪圆眼，配文兄弟不可以"）。
+ * 有了它，模型选图就不只是看标签名 ✗，而是能按**画面**挑 ✓ —— 这是"选得准"的关键一步 ✓。
+ * 文件不存在/坏了就返回空对象 ✓（当作没有描述 ✓，绝不因为这张表把回复带崩 ✗）。
+ */
+export function readDescriptions(dir) {
+  try { return readJsonMap(join(dir, '.descriptions.json')); } catch { return {}; }
+}
+
 export function loadStickers(dirRel = 'stickers') {
   const dir = resolve(ROOT, dirRel);
   /** @type {Map<string, string[]>} */
