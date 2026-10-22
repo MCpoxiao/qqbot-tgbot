@@ -1823,3 +1823,13 @@ Object.assign(IMPL, {
 });
 // ⚠️ TOOL_NAMES 是在模块加载时用 Object.keys(IMPL) 算的 ✗ —— 上面是**后追加**的 ⇒ 这里补上（2026-10-19）
 TOOL_NAMES.push(...Object.keys(IMPL).filter((k) => k.startsWith('phone_')));
+
+/**
+ * ⚠️ **2026-10-22 踩到的坑**：`TOOL_NAMES` 是在**模块加载时**用 `Object.keys(IMPL)` 算的 ✗ ——
+ * 而这文件后面还有 `Object.assign(IMPL, …)`（手机工具）+ `TOOL_DEFS.push` 追加的工具（save_sticker / collect_stickers）✓
+ * ⇒ 它们**进不了 TOOL_NAMES** ✗（实测 24 个声明、22 个名字 ✓）。
+ * 这里统一补一次 ✓（幂等 ✓），以后再加工具就不用记着改两处了 ✓。
+ */
+for (const k of Object.keys(IMPL)) {
+  if (!TOOL_NAMES.includes(k)) TOOL_NAMES.push(k);
+}
