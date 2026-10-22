@@ -2921,6 +2921,24 @@ async function testTools() {
       '意图：没有草稿时「发」不路由（别把闲聊吃掉）',
       matchIntent('发', { pending: '' }) === null && matchIntent('发个邮件给老王', { pending: 'qzone' }) === null,
     );
+    // 2026-10-22 真机事故：一个「发说说」草稿挂了半小时，用户随口回「嗯」被当成确认 ✗
+    //   ⇒ 代码去执行 qq_confirm，回了「没认出你要发的是哪一句」✗（用户看到的就是「嗯」被映射走了）
+    check(
+      '意图：闲聊的「嗯 / 好 / 行」**不能**确认草稿（必须明确表态）',
+      matchIntent('嗯', { pending: 'qzone' }) === null &&
+        matchIntent('好', { pending: 'qzone' }) === null &&
+        matchIntent('行', { pending: 'follow' }) === null &&
+        matchIntent('发吧', { pending: 'qzone' })?.tool === 'qq_confirm' &&
+        matchIntent('确认', { pending: 'profile' })?.tool === 'qq_confirm',
+    );
+    // 2026-10-22：接歌接错歌名后，用户说「是XX的歌词」= 纠正 ⇒ 应该直接交 lyrics 重查
+    check(
+      '意图：「是《X》的歌词」= 纠正歌名 ⇒ 直接交 lyrics 按歌名重查',
+      matchIntent('是东行苦南山的歌词')?.tool === 'lyrics' &&
+        matchIntent('是东行苦南山的歌词')?.args?.song === '东行苦南山' &&
+        matchIntent('是《东南苦山行》的歌词')?.args?.action === 'search' &&
+        matchIntent('这歌词是什么') === null,
+    );
 
     rmSync(qlog, { force: true });
   }
