@@ -20,6 +20,20 @@
 const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36';
 const TIMEOUT = 9000;
 
+/**
+ * 这串字看起来像**一句歌词**还是**一个歌名**？
+ *
+ * 判据偏保守 ✓：宁可把长歌名当歌词去认（认不出来会明说 ✓），也别把一句歌词当歌名去搜 ✗
+ * （那样会搜到名字相近的无关歌 ✗，比认不出来更糟 ✗）。
+ */
+export function looksLikeLyric(text) {
+  const s = String(text ?? '').trim();
+  if (!s) return false;
+  if (/[，,。！!？?；;、]/.test(s)) return true; // 有标点 → 像句子 ✓
+  if (s.length >= 7) return true; // 歌名一般不超过 6~7 字 ✓（"故事的小黄花"这种会被当歌词 ✓）
+  return false;
+}
+
 async function getJson(url, extraHeaders = {}) {
   const res = await fetch(url, {
     headers: { 'user-agent': UA, 'accept-language': 'zh-CN,zh;q=0.9', ...extraHeaders },
@@ -105,13 +119,35 @@ export async function searchKugou(keyword) {
 
 /**
  * 主入口：按 **QQ音乐 → 网易云 → 酷狗** 的顺序找，第一个成功就返回 ✓。
- * @param {{song?: string, artist?: string}} args
+ *
+ * **2026-10-27 加：也吃一句歌词** ✓（用户问「能歌词搜吗，比如"帮我找下我闻着饼香，来到了街中央"」）。
+ * 判据：给了 `lyrics` ✓，或者 `song` 一看就**不像歌名** ✓（长 ≥ 7 个字 / 带逗号顿号 / 带"我、你、的"这种语气 ✓）
+ * ⇒ 先走 `identifySong()` 认歌 ✓（它会在候选歌的**真歌词**里核对这句 ✓，认错会返回 null ✓），
+ * 认出来再用它的歌名去要链接 ✓；认不出来就**如实说"这句我没认出来"** ✓，绝不拿这句去搜歌名 ✗。
+ *
+ * @param {{song?: string, artist?: string, lyrics?: string}} args
  * @returns {Promise<string>} 直接给模型看的文字（不抛异常 ✓）
  */
 export async function songLink(args = {}) {
-  const song = String(args?.song ?? '').trim();
-  if (!song) return '要查哪首歌？给个歌名（有歌手更好）。';
-  const artist = String(args?.artist ?? '').trim();
+  let song = String(args?.song ?? '').trim();
+  let artist = String(args?.artist ?? '').trim();
+  const lyricLine = String(args?.lyrics ?? '').trim() || (looksLikeLyric(song) ? song : '');
+
+  if (lyricLine) {
+    try {
+      const { identifySong } = await import('./lyrics.mjs');
+      const hit = await identifySong(lyricLine, { song: '', artist: '' });
+      if (!hit) {
+        return '这句我没认出来是哪首歌：' + lyricLine.slice(0, 40) + '\n（可以把歌名告诉我，或者再多唱两句。）';
+      }
+      song = hit.song;
+      artist = hit.artists;
+    } catch (e) {
+      return '按歌词认歌出错：' + String(e?.message ?? e).slice(0, 80) + '\n（可以直接给我歌名。）';
+    }
+  }
+
+  if (!song) return '要查哪首歌？给个歌名（有歌手更好），或者直接把一句歌词给我。';
   const keyword = artist && !song.includes(artist) ? song + ' ' + artist : song;
 
   const tries = [

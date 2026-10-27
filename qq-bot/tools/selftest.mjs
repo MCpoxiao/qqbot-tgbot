@@ -93,6 +93,7 @@ import { Reminders, humanizeGap, remindersAllowed, resolveWhen, runReminderTool 
 import { ApprovalWatcher, decodeFrames, formatApproval, parseApprovalEvents } from '../src/approvals.mjs';
 import { matchIntent } from '../src/intents.mjs';
 import { TOOL_NAMES } from '../src/tools.mjs';
+import { looksLikeLyric } from '../src/songlink.mjs';
 import { cleanMemes, loadMemes } from '../src/memes.mjs';
 import { isGoodMatch, longestCommon, parseQQMusic, pickBestSong } from '../src/music.mjs';
 import {
@@ -1071,11 +1072,21 @@ async function testEndToEnd() {
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
   );
 
+  // 2026-10-27：「这句是歌名还是歌词」—— 判错了会去搜到无关的歌 ✗
+  check(
+    'song_link：一句词会被当成歌词去认（而不是拿去搜歌名）',
+    looksLikeLyric('我闻着饼香，来到了街中央') === true && // 有标点 ✓
+      looksLikeLyric('故事的小黄花') === false &&        // 6 字，当歌名 ✓
+      looksLikeLyric('这是一句很长很长的歌词没有标点') === true && // ≥7 字 ✓
+      looksLikeLyric('起风了') === false &&              // 3 字 ✓
+      looksLikeLyric('') === false,
+  );
+
   // 2026-10-27：歌名 → 播放链接（**离线**只验"不瞎编"那半边 ✓；联网那半边靠 runTool 手验 ✓）
   check(
     '工具：song_link 在工具表里，空参数只回提示（不发请求、不编链接）',
     TOOL_NAMES.includes('song_link') &&
-      (await execTool('song_link', {}, {})) === '要查哪首歌？给个歌名（有歌手更好）。',
+      (await execTool('song_link', {}, {})) === '要查哪首歌？给个歌名（有歌手更好），或者直接把一句歌词给我。',
   );
 
   // 2026-10-22：保存他刚发的贴纸（用临时目录，别污染真库 ✓）

@@ -911,10 +911,15 @@ export const TOOL_DEFS = [
     function: {
       name: 'lyrics',
       description:
-        '**查真实歌词 / 接歌**（网易云）。' +
+        '**查真实歌词 / 认歌 / 接歌**（网易云）。' +
         '⚠️ **别凭记忆背歌词**（会记串、漏段、编词）——只要涉及歌词就调这个。' +
-        '三种用法：`action:"next"` **接歌**（`line` 填**他刚唱的那句**，回下一句；唱错几个字也能对上，对不上会明确告诉你"歌词里没有"——那就如实说，**绝不自己编一句接上**）；' +
-        '`action:"get"` 取整首歌词文本（用于"这歌歌词是什么/教我唱"）；`action:"search"` 只给候选版本（他说的版本不确定时用）。' +
+        '四种用法：' +
+        '`action:"identify"` **按一句词认歌**（`line` 填**他说的那句词**；他会说"帮我找下<一句词>"、"这是哪首歌"、"我唱的是什么歌"——**这就是它**；' +
+        '会告诉你是哪首、第几句、下一句；认不出来会明说，**绝不编歌名**）；' +
+        '`action:"next"` **接歌**（`line` 填**他刚唱的那句**，回下一句）；' +
+        '`action:"get"` 取整首歌词文本（"这歌歌词是什么/教我唱"）；' +
+        '`action:"search"` 只给候选版本（他说的版本不确定时用）。' +
+        '⚠️ 他要的是**能点开听的链接**（不是歌名科普 ✗）时，认出来之后**再调 `song_link`**（把歌名+歌手传过去）✓。' +
         '接歌时**只唱词、别解释**，不要加"这句的意思是…"这种旁白。',
       parameters: {
         type: 'object',
@@ -922,7 +927,7 @@ export const TOOL_DEFS = [
           song: { type: 'string', description: '歌名（接歌时可以不填，直接从 line 里认）' },
           artist: { type: 'string', description: '歌手名，用于在同名歌曲里挑对版本' },
           line: { type: 'string', description: '他刚唱的那句歌词（`action:"next"` 时填这个）' },
-          action: { type: 'string', enum: ['search', 'get', 'next'], description: 'next=接歌（默认，给了 line 时）；get=取歌词；search=只搜版本' },
+          action: { type: 'string', enum: ['identify', 'search', 'get', 'next'], description: 'identify=按他唱的那句词**认歌**（默认：给了 line 且没给歌名时）；next=接下一句；get=取歌词；search=按歌名搜版本' },
           count: { type: 'integer', description: '接几句，默认 2（最多 6）', minimum: 1, maximum: 6 },
         },
         required: [],
