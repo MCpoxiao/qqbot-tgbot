@@ -92,6 +92,7 @@ import {
 import { Reminders, humanizeGap, remindersAllowed, resolveWhen, runReminderTool } from '../src/reminders.mjs';
 import { ApprovalWatcher, decodeFrames, formatApproval, parseApprovalEvents } from '../src/approvals.mjs';
 import { matchIntent } from '../src/intents.mjs';
+import { TOOL_NAMES } from '../src/tools.mjs';
 import { cleanMemes, loadMemes } from '../src/memes.mjs';
 import { isGoodMatch, longestCommon, parseQQMusic, pickBestSong } from '../src/music.mjs';
 import {
@@ -1068,6 +1069,13 @@ async function testEndToEnd() {
     '连发合并：两条并成一轮（不是各回一条，也不是丢一条）',
     echoTimes === 1 && mergedText.includes('第一句') && mergedText.includes('第二句'),
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
+  );
+
+  // 2026-10-27：歌名 → 播放链接（**离线**只验"不瞎编"那半边 ✓；联网那半边靠 runTool 手验 ✓）
+  check(
+    '工具：song_link 在工具表里，空参数只回提示（不发请求、不编链接）',
+    TOOL_NAMES.includes('song_link') &&
+      (await execTool('song_link', {}, {})) === '要查哪首歌？给个歌名（有歌手更好）。',
   );
 
   // 2026-10-22：保存他刚发的贴纸（用临时目录，别污染真库 ✓）

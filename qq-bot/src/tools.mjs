@@ -1565,6 +1565,33 @@ const COLLECT_STICKERS_DEF = {
 };
 TOOL_DEFS.push(COLLECT_STICKERS_DEF);
 
+/**
+ * **歌名 → 播放链接**（2026-10-27 用户要求）。
+ *
+ * 真机起因：他问「巴西顺拐舞的歌原名是什么」✓，她搜了一通**给了 B站 视频链接** ✗，
+ * 他接着说「**你把链接给我**」✓ —— 他要的是**能点开听的歌** ✓，不是"这歌叫什么"的科普 ✓。
+ * 优先级按他指定的来：**QQ音乐 → 网易云 → 酷狗** ✓（实现见 `src/songlink.mjs`）。
+ */
+const SONG_LINK_DEF = {
+  type: 'function',
+  function: {
+    name: 'song_link',
+    description:
+      '**按歌名给出可点的播放链接**（优先 QQ音乐，其次网易云，最后酷狗）。' +
+      '他说「把链接给我 / 帮我找这歌 / 哪儿能听 / 放一下这首」时用。' +
+      '只回**第一个**匹配（他要一个链接，不是候选列表）；搜不到就说搜不到，**绝不编歌名或链接**。',
+    parameters: {
+      type: 'object',
+      properties: {
+        song: { type: 'string', description: '歌名（他给的名字，原样写 ✓）' },
+        artist: { type: 'string', description: '歌手（知道就带上，能提高命中率）' },
+      },
+      required: ['song'],
+    },
+  },
+};
+TOOL_DEFS.push(SONG_LINK_DEF);
+
 TOOL_DEFS.push(...PHONE_DEFS);
 
 const PLAY_STATE = { lastAt: 0, day: '', count: 0 }; // 「自己玩手机」的当天计数 ✓
@@ -1657,6 +1684,15 @@ async function phoneCall(action, args = {}) {
 }
 
 Object.assign(IMPL, {
+  /** 歌名 → 播放链接（QQ音乐 → 网易云 → 酷狗 ✓）。网络失败也不抛，让模型如实说 ✓。 */
+  song_link: async (a) => {
+    try {
+      const { songLink } = await import('./songlink.mjs');
+      return await songLink(a ?? {});
+    } catch (e) {
+      return '查播放链接出错：' + String(e?.message ?? e).slice(0, 120);
+    }
+  },
   phone_status: () => phoneCall('status'),
   phone_start: () => phoneCall('start'),
   phone_look: (a) => phoneCall('look', a),
