@@ -334,7 +334,15 @@ export const WORK_KNOWN_TAGS = [...new Set(WORK_TAG_GROUPS.flat().map((t) => Str
 
 /** 小写写法 → 它所在的那一组（比对作品标签时要认全组）。 */
 const GROUP_BY_FORM = new Map();
-for (const group of [...ADULT_TAG_GROUPS, ...WORK_TAG_GROUPS]) {
+/**
+ * **分级词单独成组**（2026-10-28 修的真 bug）：
+ * 用户说「找胡桃的 r18 图」✓，而 `searchTagFor('r18')` 原来**原样返回 `'r18'`** ✗ ——
+ * 可 pixiv 上的真标签是 **`R-18`**（大写 + 横杠 ✓）⇒ 搜出去等于搜了个不存在的标签 ✗ ⇒ **0 条** ✓
+ * ⇒ 退回 Bing（`adlt=strict` ✗ 永远没有 R18 ✗）⇒ 用户看到「这也不是r18啊」✗。
+ * 放进组里之后：`searchTagFor('r18') === 'R-18'` ✓，比对时 `aliasFormsFor()` 也认全组 ✓。
+ */
+const RATING_TAG_GROUP = ['R-18', 'R-18G', 'r-18', 'r-18g', 'r18', 'r18g', 'R18', 'R18G'];
+for (const group of [...ADULT_TAG_GROUPS, ...WORK_TAG_GROUPS, RATING_TAG_GROUP]) {
   const forms = group.map((t) => String(t).trim()).filter(Boolean);
   for (const f of forms) {
     if (!GROUP_BY_FORM.has(f.toLowerCase())) GROUP_BY_FORM.set(f.toLowerCase(), forms);

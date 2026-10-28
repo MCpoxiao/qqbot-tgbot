@@ -93,6 +93,7 @@ import { Reminders, humanizeGap, remindersAllowed, resolveWhen, runReminderTool 
 import { ApprovalWatcher, decodeFrames, formatApproval, parseApprovalEvents } from '../src/approvals.mjs';
 import { matchIntent } from '../src/intents.mjs';
 import { TOOL_NAMES } from '../src/tools.mjs';
+import { pixivCookie } from '../src/pixiv.mjs';
 import { looksLikeLyric } from '../src/songlink.mjs';
 import { cleanMemes, loadMemes } from '../src/memes.mjs';
 import { isGoodMatch, longestCommon, parseQQMusic, pickBestSong } from '../src/music.mjs';
@@ -1070,6 +1071,28 @@ async function testEndToEnd() {
     '连发合并：两条并成一轮（不是各回一条，也不是丢一条）',
     echoTimes === 1 && mergedText.includes('第一句') && mergedText.includes('第二句'),
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
+  );
+
+  // 2026-10-28：r18 搜不到 R18 —— 两个真 bug（标签写法 / cookie 解析）
+  check(
+    '分级词要翻成 pixiv 真标签 R-18（否则搜出去是 0 条）',
+    searchTagFor('r18') === 'R-18' && searchTagFor('R18') === 'R-18' && searchTagFor('r-18') === 'R-18' &&
+      aliasFormsFor('r18').includes('R-18G') && searchTagFor('色气') === '色气',
+  );
+  check(
+    'pixiv cookie：支持 Netscape 与 name=value 两种写法，拼成 ; 分隔的一行',
+    (() => {
+      const f = mkdtempSync(tmpdir() + '/ck-') + '/pixiv-cookie.txt';
+      writeFileSync(f, '# 注释行要忽略\n.PHPSESSID\tTRUE\t/\tTRUE\t1900000000\tPHPSESSID\tAAA\n# 又一行注释\nSESSDATA=BBB; foo=bar\n', 'utf8');
+      const old = process.env.PIXIV_COOKIE_FILE;
+      process.env.PIXIV_COOKIE_FILE = f;
+      try {
+        const ck = pixivCookie();
+        return ck === 'PHPSESSID=AAA; SESSDATA=BBB; foo=bar' && !ck.includes('\t') && !ck.includes('#');
+      } finally {
+        if (old === undefined) delete process.env.PIXIV_COOKIE_FILE; else process.env.PIXIV_COOKIE_FILE = old;
+      }
+    })(),
   );
 
   // 2026-10-27：「这句是歌名还是歌词」—— 判错了会去搜到无关的歌 ✗

@@ -48,16 +48,40 @@ export function pixivCookie() {
   try {
     if (!existsSync(f)) return '';
     /**
-     * 允许文件里写注释：**以 # 开头的行整行忽略**（方便在文件里留填写说明），
-     * 其余行拼成一行 cookie。这样用户可以直接在文件里写 `PHPSESSID=…; SESSDATA=…`。
-     * 顺带：**每次调用都重新读文件** → 填完**不用重启**机器人。
+     * 允许文件里写注释：**以 # 开头的行整行忽略** ✓。
+     *
+     * ⚠️ **2026-10-28 修**：原来把剩下的行用**空格**拼起来 ✗ —— 那是错的 ✓：
+     *   · 一行 `PHPSESSID=abc` ✓、下一行 `SESSDATA=def` ✓ ⇒ 拼成 `PHPSESSID=abc SESSDATA=def` ✗
+     *     （cookie 头要的是 `; ` 分隔 ✗）；
+     *   · 而用户从浏览器扩展导出的常是 **Netscape 格式** ✓（`域名 \t 标记 \t 路径 \t 安全 \t 过期 \t 名 \t 值` ✓），
+     *     用空格拼完是一坨 ✗ ⇒ 发出去会被 undici 报 `Cannot convert argument to a ByteString` ✓。
+     * 现在：两种格式都认 ✓，统一拼成 `名=值; 名=值` ✓；**每次调用重读文件**（填完不用重启 ✓）。
      */
-    const body = readFileSync(f, 'utf8')
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'))
-      .join(' ');
-    return body.replace(/\s+/g, ' ').trim();
+    const pairs = [];
+    for (const line of readFileSync(f, 'utf8').split(/\r?\n/)) {
+      const l = line.trim();
+      if (!l || l.startsWith('#')) continue;
+      const cols = l.split('\t');
+      if (cols.length >= 7) {
+        // Netscape：最后一列是值，倒数第二列是名字
+        const name = cols[cols.length - 2].trim();
+        const value = cols[cols.length - 1].trim();
+        if (name && value) pairs.push(name + '=' + value);
+        continue;
+      }
+      // 普通写法：`name=value`（一行可以有多个，用 ; 分开）
+      for (const part of l.split(';')) {
+        const p = part.trim();
+        if (p && p.includes('=')) pairs.push(p);
+      }
+    }
+    // 去重（同名只留最后一个 ✓）
+    const map = new Map();
+    for (const p of pairs) {
+      const i = p.indexOf('=');
+      map.set(p.slice(0, i).trim(), p.slice(i + 1).trim());
+    }
+    return [...map.entries()].map(([k, v]) => k + '=' + v).join('; ');
   } catch {
     return '';
   }
