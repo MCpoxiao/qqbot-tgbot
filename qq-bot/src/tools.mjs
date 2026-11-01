@@ -1689,11 +1689,43 @@ async function phoneCall(action, args = {}) {
 }
 
 Object.assign(IMPL, {
-  /** 歌名 → 播放链接（QQ音乐 → 网易云 → 酷狗 ✓）。网络失败也不抛，让模型如实说 ✓。 */
-  song_link: async (a) => {
+  /**
+   * 歌名 → 播放链接（QQ音乐 → 网易云 → 酷狗 ✓），并**顺手发一张封面卡片** ✓。
+   *
+   * ⚠️ **2026-11-01 用户要求**：「发歌时给一个**能点开就播**的卡片/预览」✓。
+   * TG 端**没有** QQ 那种音乐卡片 ✗ ⇒ 用 **QQ音乐封面图 + 链接文字** 做一张最直观的卡片 ✓
+   * （封面失败就只给链接 ✓，绝不让整件事失败 ✗）。网络失败也不抛，让模型如实说 ✓。
+   */
+  song_link: async (a, ctx) => {
     try {
-      const { songLink } = await import('./songlink.mjs');
-      return await songLink(a ?? {});
+      const { findSong } = await import('./songlink.mjs');
+      const r = await findSong(a ?? {});
+      if (r.error) return r.error;
+      if (!r.hit) return r.miss ?? '没搜到。';
+      const hit = r.hit;
+      const title = hit.artist ? hit.name + ' - ' + hit.artist : hit.name;
+
+      let carded = false;
+      if (hit.cover && typeof ctx?.sendImage === 'function') {
+        try {
+          const { writeFileSync, unlinkSync } = await import('node:fs');
+          const { join } = await import('node:path');
+          const { tmpdir } = await import('node:os');
+          const img = await fetch(hit.cover, {
+            headers: { 'user-agent': 'Mozilla/5.0', referer: 'https://y.qq.com/' },
+            signal: AbortSignal.timeout(15000),
+          });
+          if (img.ok) {
+            const tmp = join(tmpdir(), 'song-cover-' + Date.now() + '.jpg');
+            writeFileSync(tmp, Buffer.from(await img.arrayBuffer()));
+            carded = (await ctx.sendImage(tmp, { title }).catch(() => false)) === true;
+            try { unlinkSync(tmp); } catch { /* 临时文件删不掉也无所谓 ✓ */ }
+          }
+        } catch { /* 封面失败不影响给链接 ✓ */ }
+      }
+
+      const more = hit.more > 0 ? '\n（这条是第一个；要别的版本就说一声）' : '';
+      return (carded ? '（封面卡片已经发出去了 ✓）' : '') + '找到了（' + (hit.site || 'QQ音乐') + '）：' + title + '\n' + hit.url + more;
     } catch (e) {
       return '查播放链接出错：' + String(e?.message ?? e).slice(0, 120);
     }

@@ -1796,9 +1796,17 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
         //    （问"这是谁"还是"这写的什么"）—— 让它**针对问题**看图，比泛泛描述有用得多。
         const seen = await describeImages(state, images, { max: state.vision?.maxImages ?? 2, log, question: text });
         if (seen) textForModel = text ? `${text}\n` + `【图里的内容】${seen}\n${imageDisciplineNote()}` : `【图里的内容】${seen}\n${imageDisciplineNote()}`;
-        if (quotedNote) textForModel += quotedNote;
         else if (!text) textForModel = '（对方发了一张图，但我没读出来）';
       }
+      /**
+       * ⚠️ **2026-11-01 真机**：他引用了一条 **150 字的纯文字**消息，只说了句「记」✓，
+       * 她回「**记啥呀，我这边没看着你要记的东西呢**」✗ —— 而日志明写着「被引用的那条里有文字…→ 当上下文」✗。
+       *
+       * 根因：这行原来被写在 `if (images.length)` **里面** ✗ ⇒
+       * **只有“这条消息带图”时才会拼引用原文** ✓；纯文字引用**永远走不到这里** ✗。
+       * 现在挪到外面 ✓（有图没图都拼 ✓）。
+       */
+      if (quotedNote) textForModel += quotedNote;
       /**
        * ⚠️ **发来的视频/语音：能看就看，看不了就如实说**（2026-10-11）。
        *

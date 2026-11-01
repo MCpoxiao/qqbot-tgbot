@@ -56,11 +56,14 @@ export async function searchQQMusic(keyword) {
   const s = list[0];
   if (!s?.songmid) return null;
   const singers = (s.singer ?? []).map((x) => x.name).filter(Boolean).join('、');
+  // 封面（2026-11-01 加：TG 端没有「音乐卡片」，用**封面图 + 链接**做一张最直观 ✓）
+  const albummid = String(s.albummid ?? s.album?.mid ?? '').trim();
   return {
     site: 'QQ音乐',
     name: String(s.songname ?? '').trim(),
     artist: singers,
     url: 'https://y.qq.com/n/ryqq/songDetail/' + s.songmid,
+    cover: albummid ? 'https://y.gtimg.cn/music/photo_new/T002R300x300M000' + albummid + '.jpg' : '',
     more: list.length - 1,
   };
 }
@@ -129,6 +132,21 @@ export async function searchKugou(keyword) {
  * @returns {Promise<string>} 直接给模型看的文字（不抛异常 ✓）
  */
 export async function songLink(args = {}) {
+  const r = await findSong(args);
+  if (r.error) return r.error;
+  if (!r.hit) return r.miss;
+  const hit = r.hit;
+  const title = hit.artist ? hit.name + ' - ' + hit.artist : hit.name;
+  const more = hit.more > 0 ? '\n（这条是第一个；要别的版本就说一声）' : '';
+  return '找到了（' + hit.site + '）：' + title + '\n' + hit.url + more;
+}
+
+/**
+ * 同上，但**返回结构化结果**（`{hit, error, miss}`）—— 给"发卡片"那条路用 ✓：
+ * TG 端没有 QQ 那种音乐卡片 ✗，所以工具层要用 `hit.cover` 发一张**封面图** + 链接文字 ✓。
+ * @param {{song?: string, artist?: string, lyrics?: string}} args
+ */
+export async function findSong(args = {}) {
   let song = String(args?.song ?? '').trim();
   let artist = String(args?.artist ?? '').trim();
   const lyricLine = String(args?.lyrics ?? '').trim() || (looksLikeLyric(song) ? song : '');
@@ -138,16 +156,16 @@ export async function songLink(args = {}) {
       const { identifySong } = await import('./lyrics.mjs');
       const hit = await identifySong(lyricLine, { song: '', artist: '' });
       if (!hit) {
-        return '这句我没认出来是哪首歌：' + lyricLine.slice(0, 40) + '\n（可以把歌名告诉我，或者再多唱两句。）';
+        return { error: '这句我没认出来是哪首歌：' + lyricLine.slice(0, 40) + '\n（可以把歌名告诉我，或者再多唱两句。）' };
       }
       song = hit.song;
       artist = hit.artists;
     } catch (e) {
-      return '按歌词认歌出错：' + String(e?.message ?? e).slice(0, 80) + '\n（可以直接给我歌名。）';
+      return { error: '按歌词认歌出错：' + String(e?.message ?? e).slice(0, 80) + '\n（可以直接给我歌名。）' };
     }
   }
 
-  if (!song) return '要查哪首歌？给个歌名（有歌手更好），或者直接把一句歌词给我。';
+  if (!song) return { error: '要查哪首歌？给个歌名（有歌手更好），或者直接把一句歌词给我。' };
   const keyword = artist && !song.includes(artist) ? song + ' ' + artist : song;
 
   const tries = [
@@ -159,15 +177,11 @@ export async function songLink(args = {}) {
   for (const [label, fn] of tries) {
     try {
       const hit = await fn(keyword);
-      if (hit?.url) {
-        const title = hit.artist ? hit.name + ' - ' + hit.artist : hit.name;
-        const more = hit.more > 0 ? '\n（这条是第一个；要别的版本就说一声）' : '';
-        return '找到了（' + label + '）：' + title + '\n' + hit.url + more;
-      }
+      if (hit?.url) return { hit: { ...hit, site: hit.site || label } };
       errors.push(label + '：没结果');
     } catch (e) {
       errors.push(label + '：' + String(e?.message ?? e).slice(0, 40));
     }
   }
-  return '三个站都没搜到「' + keyword + '」（' + errors.join(' ｜ ') + '）—— 换个写法（歌手+歌名）再试。';
+  return { miss: '三个站都没搜到「' + keyword + '」（' + errors.join(' ｜ ') + '）—— 换个写法（歌手+歌名）再试。' };
 }
