@@ -2766,8 +2766,20 @@ log.warn(`[找图] 这一段抛错了：${err?.stack ?? err?.message ?? err}`);
         }
 
         const rich = buildRichSegments(body, (p) => log.warn(`表情包文件读不到，已跳过：${p}`));
-        // 万一整条回复只剩图片、而图片全读不到，就把标记剥掉当纯文本发，别发空气
-        if (rich.length === 0) rich.push({ type: 'text', text: stripImageMarkers(reply) || '……' });
+        /**
+         * ⚠️ **2026-11-20 真机**（天气那条）：模型把工具调用**写成正文** ✗
+         * `<tool_call>get_weather{"city":"西安"}</tool_call>` ⇒ 剥掉之后**整条成了空串** ✓
+         * ⇒ 原来的兜底只在 `rich.length === 0` 时触发 ✗，这里 `rich` 是 `[空文本]` ✗ ⇒ 会发一条空气 ✗。
+         * 现在判**有没有真内容**（非空文本 / 图片 / 音乐卡）✓，没有就给一句诚实兜底 ✓。
+         */
+        const hasReal =
+          rich.some((s) => (s.type === 'text' && String(s.text ?? '').trim()) || s.type === 'image' || s.type === 'music');
+        if (!hasReal) {
+          const left = stripImageMarkers(reply).trim();
+          while (rich.length) rich.pop();
+          rich.push({ type: 'text', text: left || '（我这边卡了一下，你再说一遍？）' });
+          log.warn('[发送] 整条回复被剥空了（多半是模型把工具调用写成了正文）⇒ 用兜底提示代替');
+        }
         const imageCount = rich.filter((s) => s.type === 'image').length;
         const plain = rich.filter((s) => s.type === 'text').map((s) => s.text).join(' ');
 

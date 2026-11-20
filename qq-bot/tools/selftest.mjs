@@ -41,13 +41,7 @@ import {
   timeAnchor,
   nowLabelShort,
 } from '../src/tools.mjs';
-import { stickerCooled,
-  isHumanTag,
-  loadStickers,
-  splitReply,
-  stripImageMarkers,
-  toBase64UrlOrNull,
-} from '../src/stickers.mjs';
+import { stickerCooled, isHumanTag, loadStickers, splitReply, stripImageMarkers, toBase64UrlOrNull, stripToolDsl } from '../src/stickers.mjs';
 import { pickImages, makeZip, readZip } from '../src/zip.mjs';
 import { ChatArchive, dayKey, hourFileName, hourPrefixOf, normalizeSegments, parseCq, parseTimeWindow, prunePlan, segmentsToText, shiftDay, timeRecallHint } from '../src/chatlog.mjs';
 import { buildResolveAsk, interpretPendingAnswer, needResolve, parseResolveJson, pickWorkFromAnswer, searchWordFor } from '../src/character.mjs';
@@ -1071,6 +1065,16 @@ async function testEndToEnd() {
     '连发合并：两条并成一轮（不是各回一条，也不是丢一条）',
     echoTimes === 1 && mergedText.includes('第一句') && mergedText.includes('第二句'),
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
+  );
+
+  // 2026-11-20：模型把工具调用写成正文（<tool_call>…</tool_call>）⇒ 必须剥掉，绝不发给用户
+  check(
+    '工具调用写成正文时会被剥掉（DSML 与 <tool_call> 两种写法）',
+    stripToolDsl('<tool_call>get_weather{"city":"西安"}</tool_call>') === '' &&
+      stripToolDsl('西安晴 5.9 度。<tool_call>get_weather{}</tool_call>') === '西安晴 5.9 度。' &&
+      stripToolDsl('前面一句</tool_call>后面一句') === '前面一句' &&
+      stripToolDsl('<｜｜DSML｜｜ calls> <｜｜DSML｜｜ invoke name="x">') === '' &&
+      stripToolDsl('今天北京晴。') === '今天北京晴。',
   );
 
   // 2026-10-28：r18 搜不到 R18 —— 两个真 bug（标签写法 / cookie 解析）

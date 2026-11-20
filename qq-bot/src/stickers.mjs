@@ -194,23 +194,41 @@ export function stripUnknownToolMarkers(text) {
 
 /** 把回复里的发图标记全部删掉——图片发不出去时的兜底，保证文字还在。 */
 /**
- * **剥掉模型"写成文本的工具调用"**（DeepSeek 的 `DSML` 标记）。
+ * **剥掉模型"写成文本的工具调用"**（DeepSeek 的 `DSML` 标记 + `<tool_call>` 标签）。
  *
  * 2026-10-19 真机：模型前 4 次工具调用正常 ✓，第 5 次却把调用**当正文**吐出来 ✗：
  * `<｜｜DSML｜｜ calls> <｜｜DSML｜｜ invoke name="phone_tap"> <｜｜DSML｜｜ parameter …>`
  * 直接发给了用户 ✓ —— 这类标记**永远不该出现在聊天里** ✗。
  *
- * 规则（保守 ✓）：一旦看见 `DSML` 标记，就认为**从这里往后都是模型的口误** ✓，
+ * 2026-11-20 真机（天气那条）：另一种写法 ✓ ——
+ * `回复：<tool_call>get_weather{"city":"西安"}</tool_call>` ✗ 也被当成正文发出去了 ✓。
+ * 这类 `<tool_call>` / `<function_call>` 标签**一并剥掉** ✓。
+ *
+ * 规则（保守 ✓）：一旦看见这类标记，就认为**从这里往后都是模型的口误** ✓，
  * 整段砍掉 ✓（宁可这条少说一句 ✓，也不要把标记发出去 ✗）。
  * 全角 `｜` 和半角 `|` 都认 ✓（真机上两种都出现过 ✓）。
  */
 export function stripToolDsl(text) {
   const s = String(text ?? '');
-  if (!/DSML/i.test(s)) return s;
-  const i = s.search(/<\s*[|｜]{1,2}\s*DSML/i);
-  const cut = i >= 0 ? s.slice(0, i) : s.replace(/<\s*[|｜]{1,2}\s*DSML[^>]*>/gi, '');
-  // 再顺手清掉残留的孤立标记（比如句尾只剩一个结束标签）
-  return cut.replace(/<\/?\s*[|｜]{1,2}\s*DSML[^>]*>/gi, '').trim();
+  /**
+   * ① `<tool_call>` / `<function_call>` / `<function=` 这类（2026-11-20 加）：
+   *    和 DSML 一样处理 —— 从第一个开标签起整段砍掉 ✓，再清残留的闭合标签 ✓。
+   */
+  const tagRe = /<\s*\/?\s*(?:tool_call|function_call|functions?|tool_calls?)\b/i;
+  let out = s;
+  if (tagRe.test(out)) {
+    const i = out.search(tagRe);
+    out = (i >= 0 ? out.slice(0, i) : out).replace(/<\/?\s*(?:tool_call|function_call|functions?|tool_calls?)\b[^>]*>/gi, '');
+  }
+  /**
+   * ② DSML（2026-10-19 那套，原样保留 ✓）
+   */
+  if (/DSML/i.test(out)) {
+    const i = out.search(/<\s*[|｜]{1,2}\s*DSML/i);
+    const cut = i >= 0 ? out.slice(0, i) : out.replace(/<\s*[|｜]{1,2}\s*DSML[^>]*>/gi, '');
+    out = cut.replace(/<\/?\s*[|｜]{1,2}\s*DSML[^>]*>/gi, '');
+  }
+  return out.trim();
 }
 
 export function stripImageMarkers(text) {
