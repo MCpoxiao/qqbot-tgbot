@@ -72,6 +72,7 @@ import {
   toBase64UrlOrNull,
 } from './src/stickers.mjs';
 import { parseSessionKey, shouldPing } from './src/proactive.mjs';
+import { buildQuotedNote } from './src/quote.mjs';
 import { composeAddressing, createTonePicker, pickAddressScene, vibeNote } from './src/addressing.mjs';
 import {
   bratTildeSegments,
@@ -1719,22 +1720,11 @@ export function startBot(config, { log = createLogger(), status = true } = {}) {
         const qWho = qMine ? '你自己' : (target && target.type === 'private' ? '他' : '别人');
         const qText = replyInlineText || extractText(qMsg);
         if (qText) {
-          quotedNote =
-            `\n【他引用的那条消息是**${qWho}**之前说的】` +
-            qText.slice(0, 200) +
-            /**
-             * ⚠️ 2026-10-10 实测踩坑：旧措辞写的是「他现在多半是在**问你那句话**」——
-             * 而真实场景是他引用了**她自己分享的 B站视频**说「你还爱看这个啊」（在逗她），
-             * 她被那句提示带偏，反问「什么叫『你还爱看这个』呀」。
-             * 改成中性且更准的说明：他是在说**那条消息里的内容**（视频/图/事），
-             * 而不是"在问她那句话本身"。
-             */
-            ((qMine || qWho === '他')
-              ? '\n（他这句话是在说那条消息里的**内容**（比如里面的视频、图、或者那件事）——' +
-                '别当成他在问你那句话本身，也不是别人发来的半句。**那条是' + (qMine ? '你自己' : '他') + '发的，你得认得。**' +
-                (/https?:\/\//.test(qText) ? '\n那条里有链接：' + (qText.match(/https?:\/\/\S+/) ?? [''])[0].slice(0, 120) : '') +
-                '）'
-              : '');
+          /**
+           * 2026-11-20：拼备注这段抽成了纯函数 `buildQuotedNote()` ✓（可单测 ✓）；
+           * 这里只剩一行调用 ✓ —— **它必须保持在 `if (images.length)` 外面** ✗（见自测里的缩进守卫）。
+           */
+          quotedNote = buildQuotedNote({ qText, qMine, isPrivate: target?.type === 'private' });
           log.info(`[引用] 被引用的那条里有文字（${qText.length} 字，${qMine ? '是我发的' : '是别人发的'}）→ 当上下文`);
         } else if (!qImgs.length) {
           log.warn(`[引用] 被引用的那条里既没图也没文字 → 取回的是：${String(typeof qMsg === 'string' ? qMsg : JSON.stringify(qMsg)).slice(0, 80)}`);

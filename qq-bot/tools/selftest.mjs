@@ -86,6 +86,7 @@ import {
 import { Reminders, humanizeGap, remindersAllowed, resolveWhen, runReminderTool } from '../src/reminders.mjs';
 import { ApprovalWatcher, decodeFrames, formatApproval, parseApprovalEvents } from '../src/approvals.mjs';
 import { matchIntent } from '../src/intents.mjs';
+import { buildQuotedNote } from '../src/quote.mjs';
 import { TOOL_NAMES } from '../src/tools.mjs';
 import { pixivCookie } from '../src/pixiv.mjs';
 import { looksLikeLyric } from '../src/songlink.mjs';
@@ -1065,6 +1066,36 @@ async function testEndToEnd() {
     '连发合并：两条并成一轮（不是各回一条，也不是丢一条）',
     echoTimes === 1 && mergedText.includes('第一句') && mergedText.includes('第二句'),
     `回复 ${mergedSends.length} 条，echo ${echoTimes} 次：${mergedText.slice(0, 110)}`,
+  );
+
+  // 2026-11-20：引用备注抽成纯函数 ✓ + 拼入那行的缩进守卫 ✓
+  //   （2026-11-01 的真 bug：拼入那行被写在 if (images.length) 里面 ✗ ⇒ 纯文字引用失效）
+  check(
+    '引用备注：私聊/群/我自己发的 三种口径都对，且带链接会单独点出来',
+    (() => {
+      const priv = buildQuotedNote({ qText: '明早九点开会', qMine: false, isPrivate: true });
+      const group = buildQuotedNote({ qText: '明早九点开会', qMine: false, isPrivate: false });
+      const mine = buildQuotedNote({ qText: '我给你发的视频', qMine: true, isPrivate: true });
+      const withLink = buildQuotedNote({ qText: '看这个 https://b23.tv/abc', qMine: false, isPrivate: true });
+      const empty = buildQuotedNote({ qText: '   ', qMine: false, isPrivate: true });
+      return (
+        priv.includes('是**他**之前说的') && priv.includes('明早九点开会') && priv.includes('那条是他发的') &&
+        group.includes('是**别人**之前说的') &&
+        mine.includes('是**你自己**之前说的') && mine.includes('你自己发的') &&
+        withLink.includes('那条里有链接：https://b23.tv/abc') &&
+        empty === ''
+      );
+    })(),
+  );
+  check(
+    '引用备注真的被拼进 textForModel（那行不能缩进到 if(images.length) 里面）',
+    (() => {
+      const src = readFileSync(resolve(ROOT, 'bot.mjs'), 'utf8').split(/\r?\n/);
+      const ind = (s) => (s.match(/^\s*/) ?? [''])[0].length;
+      const iTfm = src.findIndex((l) => /let textForModel = text;/.test(l));
+      const iApp = src.findIndex((l) => /if \(quotedNote\) textForModel \+= quotedNote;/.test(l));
+      return iTfm >= 0 && iApp >= 0 && ind(src[iApp]) <= ind(src[iTfm]);
+    })(),
   );
 
   // 2026-11-20：模型把工具调用写成正文（<tool_call>…</tool_call>）⇒ 必须剥掉，绝不发给用户
